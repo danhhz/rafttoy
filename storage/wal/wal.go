@@ -12,3 +12,9 @@ type Wal interface {
 	FirstIndex() uint64
 	CloseWal()
 }
+
+// MultiWal represents a write-ahead log that can be shared by many raft groups.
+type MultiWal interface {
+	WalForGroup(uint64) Wal
+	CloseMultiWal()
+}
