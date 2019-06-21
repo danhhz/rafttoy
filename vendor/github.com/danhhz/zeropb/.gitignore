@@ -1,0 +1,3 @@
+/protoc-gen-zeropb
+/protoc-gen-text
+*.test

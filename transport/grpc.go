@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	transpb "github.com/nvanbenschoten/rafttoy/transport/transportpb"
+	"github.com/nvanbenschoten/rafttoy/transport/transportzeropb"
 	"go.etcd.io/etcd/raft/raftpb"
 	rpc "google.golang.org/grpc"
 )
@@ -38,7 +39,7 @@ func (g *grpc) Init(addr string, peers map[uint64]string) {
 	g.clientBufs = make(map[uint64]chan<- *transpb.RaftMsg)
 	g.dialCtx, g.dialCancel = context.WithCancel(context.Background())
 	g.rpc = rpc.NewServer()
-	transpb.RegisterRaftServiceServer(g.rpc, g)
+	transportzeropb.RegisterRaftServiceServer(g.rpc, g)
 }
 
 func (g *grpc) Serve(h RaftHandler) {
@@ -69,7 +70,7 @@ func (g *grpc) Serve(h RaftHandler) {
 	}
 }
 
-func (g *grpc) RaftMessage(stream transpb.RaftService_RaftMessageServer) error {
+func (g *grpc) RaftMessage(stream transportzeropb.RaftService_RaftMessageServer) error {
 	for {
 		in, err := stream.Recv()
 		if err == io.EOF {

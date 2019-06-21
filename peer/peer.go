@@ -11,7 +11,7 @@ import (
 	"github.com/nvanbenschoten/rafttoy/proposal"
 	"github.com/nvanbenschoten/rafttoy/storage"
 	"github.com/nvanbenschoten/rafttoy/transport"
-	transpb "github.com/nvanbenschoten/rafttoy/transport/transportpb"
+	"github.com/nvanbenschoten/rafttoy/transport/transportzeropb"
 	"github.com/nvanbenschoten/rafttoy/util"
 	"go.etcd.io/etcd/raft"
 	"go.etcd.io/etcd/raft/raftpb"
@@ -37,8 +37,14 @@ type Peer struct {
 	pb propBuf
 	pt proposal.Tracker
 
-	msgs         chan *transpb.RaftMsg
+	msgs         chan *transportzeropb.RaftMsg
 	flushPropsFn func([]propBufElem)
+
+	// For converting between zeropb and gogopb.
+	snapMeta transportzeropb.SnapshotMetadata
+	snapshot transportzeropb.Snapshot
+	entry    transportzeropb.Entry
+	ea       entryAlloc
 }
 
 // Config contains configurations for constructing a Peer.
@@ -84,7 +90,8 @@ func New(
 		t:    t,
 		pl:   pl,
 		pt:   proposal.MakeTracker(),
-		msgs: make(chan *transpb.RaftMsg, 1024),
+		msgs: make(chan *transportzeropb.RaftMsg, 1024),
+		ea:   entryAlloc(make([]raftpb.Entry, 0, 512)),
 	}
 	p.t.Init(cfg.SelfAddr, cfg.PeerAddrs)
 	p.pl.Init(p.cfg.Epoch, &p.mu, p.n, p.s, p.t, &p.pt)
@@ -200,29 +207,77 @@ func (p *Peer) flushProps(es []propBufElem) {
 }
 
 // HandleMessage implements transport.RaftHandler.
-func (p *Peer) HandleMessage(m *transpb.RaftMsg) {
+func (p *Peer) HandleMessage(m *transportzeropb.RaftMsg) {
 	p.msgs <- m
 	p.signal()
 }
 
 func (p *Peer) flushMsgs() {
+	var msg transportzeropb.Message
 	for {
 		select {
 		case m := <-p.msgs:
-			if m.Epoch < p.cfg.Epoch {
+			epoch := m.Epoch()
+			if epoch < p.cfg.Epoch {
 				return
 			}
-			if m.Epoch > p.cfg.Epoch {
-				log.Printf("bumping test epoch to %d", m.Epoch)
-				p.bumpEpoch(m.Epoch)
+			if epoch > p.cfg.Epoch {
+				log.Printf("bumping test epoch to %d", epoch)
+				p.bumpEpoch(epoch)
 			}
-			for i := range m.Msgs {
-				p.n.Step(m.Msgs[i])
+			for it := m.Msgs(); ; {
+				if ok, err := it.Next(&msg); err != nil {
+					panic(err)
+				} else if !ok {
+					break
+				}
+				p.n.Step(p.toGogo(msg))
 			}
 		default:
 			return
 		}
 	}
+}
+
+func (p *Peer) toGogo(m transportzeropb.Message) raftpb.Message {
+	pbM := raftpb.Message{
+		Type:       raftpb.MessageType(m.Type()),
+		To:         m.To(),
+		From:       m.From(),
+		Term:       m.Term(),
+		LogTerm:    m.LogTerm(),
+		Index:      m.Index(),
+		Commit:     m.Commit(),
+		Reject:     m.Reject(),
+		RejectHint: m.RejectHint(),
+		Context:    m.Context(),
+	}
+	if ok, err := m.Snapshot(&p.snapshot); err != nil {
+		panic(err)
+	} else if ok {
+		if ok, err := p.snapshot.Metadata(&p.snapMeta); err != nil {
+			panic(err)
+		} else if ok {
+			if p.snapMeta.Index() != 0 {
+				panic(`WIP implement snapshots`)
+			}
+		}
+	}
+	for it := m.Entries(); ; {
+		if ok, err := it.Next(&p.entry); err != nil {
+			panic(err)
+		} else if !ok {
+			break
+		}
+		p.ea.Append(raftpb.Entry{
+			Term:  p.entry.Term(),
+			Index: p.entry.Index(),
+			Type:  raftpb.EntryType(p.entry.Type()),
+			Data:  p.entry.Data(),
+		})
+	}
+	pbM.Entries = p.ea.Get()
+	return pbM
 }
 
 func (p *Peer) bumpEpoch(epoch int32) {
@@ -259,4 +314,16 @@ func (p *Peer) WaitForAllCaughtUp() {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+}
+
+type entryAlloc []raftpb.Entry
+
+func (ea *entryAlloc) Append(e raftpb.Entry) {
+	*ea = append(*ea, e)
+}
+
+func (ea *entryAlloc) Get() []raftpb.Entry {
+	ret := *ea
+	*ea = (*ea)[len(ret):]
+	return ret
 }

@@ -1,7 +1,7 @@
 package transport
 
 import (
-	transpb "github.com/nvanbenschoten/rafttoy/transport/transportpb"
+	"github.com/nvanbenschoten/rafttoy/transport/transportzeropb"
 	"go.etcd.io/etcd/raft/raftpb"
 )
 
@@ -15,5 +15,5 @@ type Transport interface {
 
 // RaftHandler is an object capable of accepting incoming Raft messages.
 type RaftHandler interface {
-	HandleMessage(*transpb.RaftMsg)
+	HandleMessage(*transportzeropb.RaftMsg)
 }

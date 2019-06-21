@@ -4,6 +4,8 @@ github.com/beorn7/perks/quantile
 github.com/coreos/go-systemd/journal
 # github.com/coreos/pkg v0.0.0-20160727233714-3ac0863d7acf
 github.com/coreos/pkg/capnslog
+# github.com/danhhz/zeropb v0.0.0-20190630005339-a9db920d2f19
+github.com/danhhz/zeropb
 # github.com/gogo/protobuf v1.2.1
 github.com/gogo/protobuf/gogoproto
 github.com/gogo/protobuf/proto

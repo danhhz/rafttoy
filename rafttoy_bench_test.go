@@ -131,7 +131,6 @@ func benchmarkLocalRaft(b *testing.B, conc, bytes int, nodes int) {
 			g.Go(func() error {
 				c := make(chan bool, 1)
 				for prop := worker.NextProposal(); prop != nil; prop = worker.NextProposal() {
-					// fmt.Printf("propose from %d %d len=%d\n", i, prop.GetID(), len(prop))
 					if !leader.ProposeWith(prop, c) {
 						return errors.New("proposal failed")
 					}
